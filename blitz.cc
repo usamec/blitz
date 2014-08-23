@@ -27,19 +27,24 @@ inline string ReverseSeq(const string& x) {
   return ret;
 }
 
-const int nHashes = 5;
+const int nHashes = 10;
 
 unsigned long long hc[] = {
-  0xffaaffaaffaaffaaULL,
-  0xaaffaaffaaffaaffULL,
-  0x8888888888888888ULL,
-  0x4444444444444444ULL,
-  0x66bb66bb66bb66bbULL
+  0x0faaffaaffaaffaaULL,
+  0xf0ffaaffaaffaaffULL,
+  0x1e88888888888888ULL,
+  0xe144444444444444ULL,
+  0x2dbb66bb66bb66bbULL,
+  0xd2aaffaaffaaffaaULL,
+  0x3cffaaffaaffaaffULL,
+  0xc388dd8888888888ULL,
+  0x4b44444444444444ULL,
+  0xb4bbccbb66bb66bbULL
 };
 
 
 unsigned long long HashKmer(unsigned long long x, unsigned long long cc) {
-  return (x << 7) ^ (x >> 5) ^ cc;
+  return cc ^ (x << 40) ^ (x << 37);
 }
 
 void GetMinHashForSeq(const string& seq, vector<unsigned long long>& hashes) {
@@ -188,9 +193,11 @@ void Go(char *fn, vector<unordered_map<unsigned long long, vector<int>>>& index,
   cout << "with hit " << with_hit << endl;
 }
 
-void Go2(char *fn, vector<unordered_map<unsigned long long, vector<pair<int, int>>>>& index, string& genome) {
+void Go2(char *fn, vector<unordered_map<unsigned long long, vector<pair<int, int>>>>& index,
+         string& genome, char* output_file_name) {
   ifstream f(fn);
-  string l, l2;
+  ofstream of(output_file_name);
+  string l, l2, l3;
   int hits = 0;
   int with_hit = 0;
   int lines = 0;
@@ -199,15 +206,18 @@ void Go2(char *fn, vector<unordered_map<unsigned long long, vector<pair<int, int
   vector<bool> processed(genome.length());
   vector<pair<int, int>> events;
   int depth;
+  int req_depth = 3;
   while (getline(f, l)) {
     getline(f, l2);
-    getline(f, l);
-    getline(f, l);
+    getline(f, l3);
+    getline(f, l3);
     string lr = ReverseSeq(l2);
     bool hit = false;
     GetMinHashForSeq(l2, hashes);
     events.clear();
+    int last_hit = -47;
     for (int j = 0; j < nHashes; j++) {
+      if (index[j].count(hashes[j]) == 0) continue;
       const vector<pair<int, int>>& hs = index[j][hashes[j]];
       for (int k = 0; k < hs.size(); k++) {
         events.push_back(make_pair(hs[k].first, 1));
@@ -218,12 +228,21 @@ void Go2(char *fn, vector<unordered_map<unsigned long long, vector<pair<int, int
     depth = 0;
     for (int i = 0; i < events.size(); i++) {
       depth += events[i].second;
-      if (depth > 1) hit = true;
+      if (depth >= req_depth) {
+        hit = true;
+        hits++;
+        if (events[i].first - last_hit > 101) {
+          last_hit = i;
+          of << l << " " << events[i].first << "\n";
+        }
+      }
     }
 
     GetMinHashForSeq(lr, hashes);
     events.clear();
+    last_hit = -47;
     for (int j = 0; j < nHashes; j++) {
+      if (index[j].count(hashes[j]) == 0) continue;
       const vector<pair<int, int>>& hs = index[j][hashes[j]];
       for (int k = 0; k < hs.size(); k++) {
         events.push_back(make_pair(hs[k].first, 1));
@@ -234,7 +253,14 @@ void Go2(char *fn, vector<unordered_map<unsigned long long, vector<pair<int, int
     depth = 0;
     for (int i = 0; i < events.size(); i++) {
       depth += events[i].second;
-      if (depth > 1) hit = true;
+      if (depth >= req_depth) {
+        hit = true;
+        hits++;
+        if (events[i].first - last_hit > 101) {
+          last_hit = i;
+          of << l << " " << events[i].first << " R\n";
+        }
+      }
     }
     if (hit) {
       with_hit++;
@@ -263,6 +289,6 @@ int main(int argc, char** argv) {
   BuildIndex2(genome, 101, index);
   ShowElapsedTime(start_time);
 
-  Go2(argv[2], index, genome);
+  Go2(argv[2], index, genome, argv[3]);
   ShowElapsedTime(start_time);
 }
