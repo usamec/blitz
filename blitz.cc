@@ -29,28 +29,28 @@ inline string ReverseSeq(const string& x) {
 
 const int nHashes = 10;
 
-unsigned long long hc[] = {
-  0x0faaffaaffaaffaaULL,
-  0xf0ffaaffaaffaaffULL,
-  0x1e88888888888888ULL,
-  0xe144444444444444ULL,
-  0x2dbb66bb66bb66bbULL,
-  0xd2aaffaaffaaffaaULL,
-  0x3cffaaffaaffaaffULL,
-  0xc388dd8888888888ULL,
-  0x4b44444444444444ULL,
-  0xb4bbccbb66bb66bbULL
+unsigned int hc[] = {
+  0x0faaffaa,
+  0xf0ffaaff,
+  0x1e000000,
+  0xe1444444,
+  0x2dbb66bb,
+  0xd2aaffaa,
+  0x3cffaaff,
+  0xc388dd88,
+  0x4b222222,
+  0xb4bbccbb
 };
 
 
-unsigned long long HashKmer(unsigned long long x, unsigned long long cc) {
-  return cc ^ (x << 40) ^ (x << 37);
+unsigned int HashKmer(unsigned int x, unsigned int cc) {
+  return cc ^ (x << 7) ^ (x << 4);
 }
 
-void GetMinHashForSeq(const string& seq, vector<unsigned long long>& hashes) {
+void GetMinHashForSeq(const string& seq, vector<unsigned int>& hashes) {
   hashes.clear();
   hashes.resize(nHashes);
-  unsigned long long curhash = 0;
+  unsigned int curhash = 0;
   for (int i = 0; i < kIndexKmer; i++) {
     curhash <<= 2;
     curhash += trans[seq[i]];
@@ -60,7 +60,7 @@ void GetMinHashForSeq(const string& seq, vector<unsigned long long>& hashes) {
   }
   for (int i = kIndexKmer; i < seq.length(); i++) {
     curhash <<= 2;
-    curhash &= (1ll << (2*kIndexKmer)) - 1;
+    curhash &= (1 << (2*kIndexKmer)) - 1;
     curhash += trans[seq[i]];
     for (int j = 0; j < nHashes; j++) {
       hashes[j] = max(hashes[j], HashKmer(curhash, hc[j]));
@@ -70,10 +70,10 @@ void GetMinHashForSeq(const string& seq, vector<unsigned long long>& hashes) {
 
 void BuildIndex(
     const string& seq, int read_len,
-    vector<unordered_map<unsigned long long, vector<int>>>& index) {
+    vector<unordered_map<unsigned int, vector<int>>>& index) {
   index.clear();
   index.resize(nHashes);
-  vector<unsigned long long> hashes;
+  vector<unsigned int> hashes;
   for (int i = 0; i < seq.length() - read_len + 1; i++) {
     string s = seq.substr(i, read_len);
     GetMinHashForSeq(s, hashes);
@@ -84,11 +84,11 @@ void BuildIndex(
 }
 void BuildIndex2(
     const string& seq, int read_len,
-    vector<unordered_map<unsigned long long, vector<pair<int, int>>>>& index) {
+    vector<unordered_map<unsigned int, vector<pair<int, int>>>>& index) {
   index.clear();
   index.resize(nHashes);
-  vector<unsigned long long> hashes;
-  vector<unsigned long long> last_hashes(nHashes);
+  vector<unsigned int> hashes;
+  vector<unsigned int> last_hashes(nHashes);
   vector<int> int_start(nHashes);
   for (int i = 0; i < seq.length() - read_len + 1; i++) {
     string s = seq.substr(i, read_len);
@@ -126,13 +126,13 @@ void ShowElapsedTime(chrono::time_point<std::chrono::system_clock>& start) {
   cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
 }
 
-void Go(char *fn, vector<unordered_map<unsigned long long, vector<int>>>& index, string& genome) {
+void Go(char *fn, vector<unordered_map<unsigned int, vector<int>>>& index, string& genome) {
   ifstream f(fn);
   string l, l2;
   int hits = 0;
   int with_hit = 0;
   int lines = 0;
-  vector<unsigned long long> hashes;
+  vector<unsigned int> hashes;
   vector<int> counts(genome.length());
   vector<bool> processed(genome.length());
   while (getline(f, l)) {
@@ -193,7 +193,7 @@ void Go(char *fn, vector<unordered_map<unsigned long long, vector<int>>>& index,
   cout << "with hit " << with_hit << endl;
 }
 
-void Go2(char *fn, vector<unordered_map<unsigned long long, vector<pair<int, int>>>>& index,
+void Go2(char *fn, vector<unordered_map<unsigned int, vector<pair<int, int>>>>& index,
          string& genome, char* output_file_name) {
   ifstream f(fn);
   ofstream of(output_file_name);
@@ -201,7 +201,7 @@ void Go2(char *fn, vector<unordered_map<unsigned long long, vector<pair<int, int
   int hits = 0;
   int with_hit = 0;
   int lines = 0;
-  vector<unsigned long long> hashes;
+  vector<unsigned int> hashes;
   vector<int> counts(genome.length());
   vector<bool> processed(genome.length());
   vector<pair<int, int>> events;
@@ -284,11 +284,12 @@ int main(int argc, char** argv) {
   cout << "genome length " << genome.length() << endl;
   ShowElapsedTime(start_time);
 
-  vector<unordered_map<unsigned long long, vector<pair<int, int>>>> index; 
-//  vector<unordered_map<unsigned long long, vector<int>>> index; 
+  vector<unordered_map<unsigned int, vector<pair<int, int>>>> index; 
+//  vector<unordered_map<unsigned int, vector<int>>> index; 
   BuildIndex2(genome, 101, index);
   ShowElapsedTime(start_time);
 
   Go2(argv[2], index, genome, argv[3]);
+  cout << "total ";
   ShowElapsedTime(start_time);
 }
