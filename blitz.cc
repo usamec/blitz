@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <gperftools/profiler.h>
+#include <queue>
 
 using namespace std::chrono;
 using namespace std;
@@ -27,7 +28,7 @@ inline void ReverseSeq(const string& x, string& ret) {
   }
 }
 
-const int nHashes = 16;
+const int nHashes = 20;
 
 unsigned int hc[] = {
   0x0faaff,
@@ -206,6 +207,55 @@ void Go(char *fn, vector<unordered_map<unsigned int, vector<int>>>& index, strin
   cout << "with hit " << with_hit << endl;
 }
 
+struct Event {
+  int pos, who, index;
+  bool begin;
+  Event() {}
+  Event(int p, int w, int i, bool b) : pos(p), who(w), index(i), begin(b) {}
+};
+
+bool operator<(const Event& a, const Event& b) {
+  if (a.pos < b.pos) return false;
+  if (a.pos > b.pos) return true;
+  if (a.begin < b.begin) return false;
+  if (a.begin > b.begin) return true;
+  if (a.who < b.who) return false;
+  if (a.who > b.who) return true;
+}
+
+void ProcessHashes(const vector<unsigned int>& hashes,
+                   vector<vector<vector<pair<int, int>>>>& index,
+                   vector<pair<int, int>>& events,
+                   string& l,
+                   int req_depth,
+                   ofstream& of, 
+                   int& hits, bool& hit) {
+  int depth = 0;
+  events.clear();
+  int last_hit = -47;
+  for (int j = 0; j < nHashes; j++) {
+    const vector<pair<int, int>>& hs = index[j][hashes[j]];
+    for (int k = 0; k < hs.size(); k++) {
+      events.push_back(make_pair(hs[k].first, 1));
+      events.push_back(make_pair(hs[k].second, -1));
+    }
+  }
+  sort(events.begin(), events.end());
+  depth = 0;
+  for (int i = 0; i < events.size(); i++) {
+    depth += events[i].second;
+    if (depth >= req_depth) {
+      hit = true;
+      hits++;
+      if (events[i].first - last_hit > 101) {
+        last_hit = events[i].first;
+        of << l << " " << events[i].first << "\n";
+      }
+    }
+  }
+}
+
+
 void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
          string& genome, char* output_file_name) {
   ifstream f(fn);
@@ -215,8 +265,6 @@ void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
   int with_hit = 0;
   int lines = 0;
   vector<unsigned int> hashes;
-  vector<int> counts(genome.length());
-  vector<bool> processed(genome.length());
   vector<pair<int, int>> events;
   int depth;
   int req_depth = 6;
@@ -227,54 +275,9 @@ void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
     ReverseSeq(l2, lr);
     bool hit = false;
     GetMinHashForSeq(l2, hashes);
-    events.clear();
-    int last_hit = -47;
-    for (int j = 0; j < nHashes; j++) {
-//      if (index[j].count(hashes[j]) == 0) continue;
-      const vector<pair<int, int>>& hs = index[j][hashes[j]];
-      for (int k = 0; k < hs.size(); k++) {
-        events.push_back(make_pair(hs[k].first, 1));
-        events.push_back(make_pair(hs[k].second, -1));
-      }
-    }
-    sort(events.begin(), events.end());
-    depth = 0;
-    for (int i = 0; i < events.size(); i++) {
-      depth += events[i].second;
-      if (depth >= req_depth) {
-        hit = true;
-        hits++;
-        if (events[i].first - last_hit > 101) {
-          last_hit = i;
-          of << l << " " << events[i].first << "\n";
-        }
-      }
-    }
-
+    ProcessHashes(hashes, index, events, l, req_depth, of, hits, hit);
     GetMinHashForSeq(lr, hashes);
-    events.clear();
-    last_hit = -47;
-    for (int j = 0; j < nHashes; j++) {
-//      if (index[j].count(hashes[j]) == 0) continue;
-      const vector<pair<int, int>>& hs = index[j][hashes[j]];
-      for (int k = 0; k < hs.size(); k++) {
-        events.push_back(make_pair(hs[k].first, 1));
-        events.push_back(make_pair(hs[k].second, -1));
-      }
-    }
-    sort(events.begin(), events.end());
-    depth = 0;
-    for (int i = 0; i < events.size(); i++) {
-      depth += events[i].second;
-      if (depth >= req_depth) {
-        hit = true;
-        hits++;
-        if (events[i].first - last_hit > 101) {
-          last_hit = i;
-          of << l << " " << events[i].first << " R\n";
-        }
-      }
-    }
+    ProcessHashes(hashes, index, events, l, req_depth, of, hits, hit);
     if (hit) {
       with_hit++;
     }
