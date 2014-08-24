@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <unordered_map>
+#include <gperftools/profiler.h>
 
 using namespace std::chrono;
 using namespace std;
@@ -26,7 +27,7 @@ inline void ReverseSeq(const string& x, string& ret) {
   }
 }
 
-const int nHashes = 20;
+const int nHashes = 16;
 
 unsigned int hc[] = {
   0x0faaff,
@@ -285,6 +286,7 @@ void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
 
 
 int main(int argc, char** argv) {
+  ProfilerStart("blitz.prof");
   for (int i = 0; i < nHashes; i++) {
     hc[i] >>= 2;
   }
@@ -308,4 +310,5 @@ int main(int argc, char** argv) {
   Go2(argv[2], index, genome, argv[3]);
   cout << "total ";
   ShowElapsedTime(start_time);
+  ProfilerStop();
 }
