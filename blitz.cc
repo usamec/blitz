@@ -19,27 +19,36 @@ inline char ReverseBase(char a) {
   if (a == 'T') return 'A';
 }
 
-inline string ReverseSeq(const string& x) {
-  string ret;
+inline void ReverseSeq(const string& x, string& ret) {
+  ret.clear();
   for (int i = x.length()-1; i >= 0; i--) {
     ret += ReverseBase(x[i]);
   }
-  return ret;
 }
 
-const int nHashes = 10;
+const int nHashes = 20;
 
 unsigned int hc[] = {
-  0x0faaffaa,
-  0xf0ffaaff,
-  0x1e000000,
-  0xe1444444,
-  0x2dbb66bb,
-  0xd2aaffaa,
-  0x3cffaaff,
-  0xc388dd88,
-  0x4b222222,
-  0xb4bbccbb
+  0x0faaff,
+  0xf0ffaa,
+  0x1e0000,
+  0xe14444,
+  0x2dbb66,
+  0xd2aaff,
+  0x3cffaa,
+  0xc388dd,
+  0x4b2222,
+  0xb4bbcc,
+  0x5a5a5a,
+  0xa5a5a5,
+  0x696969,
+  0x969696,
+  0x787878,
+  0x787878,
+  0x888888,
+  0x000000,
+  0x472342,
+  0x2347aa
 };
 
 
@@ -56,14 +65,16 @@ void GetMinHashForSeq(const string& seq, vector<unsigned int>& hashes) {
     curhash += trans[seq[i]];
   }
   for (int j = 0; j < nHashes; j++) {
-    hashes[j] = max(hashes[j], HashKmer(curhash, hc[j]));
+    unsigned int hash = (curhash) ^ hc[j];
+    hashes[j] = hash;
   }
   for (int i = kIndexKmer; i < seq.length(); i++) {
     curhash <<= 2;
     curhash &= (1 << (2*kIndexKmer)) - 1;
     curhash += trans[seq[i]];
     for (int j = 0; j < nHashes; j++) {
-      hashes[j] = max(hashes[j], HashKmer(curhash, hc[j]));
+      unsigned int hash = (curhash) ^ hc[j];
+      hashes[j] = (hash > hashes[j]) ? hash : hashes[j];
     }
   }  
 }
@@ -84,14 +95,15 @@ void BuildIndex(
 }
 void BuildIndex2(
     const string& seq, int read_len,
-    vector<unordered_map<unsigned int, vector<pair<int, int>>>>& index) {
+    vector<vector<vector<pair<int, int>>>>& index) {
   index.clear();
-  index.resize(nHashes);
+  index.resize(nHashes, vector<vector<pair<int,int>>>(1<<22));
   vector<unsigned int> hashes;
   vector<unsigned int> last_hashes(nHashes);
   vector<int> int_start(nHashes);
+  string s;
   for (int i = 0; i < seq.length() - read_len + 1; i++) {
-    string s = seq.substr(i, read_len);
+    s.assign(seq, i, read_len);
     GetMinHashForSeq(s, hashes);
     for (int j = 0; j < nHashes; j++) {
       if (i == 0) {
@@ -128,7 +140,7 @@ void ShowElapsedTime(chrono::time_point<std::chrono::system_clock>& start) {
 
 void Go(char *fn, vector<unordered_map<unsigned int, vector<int>>>& index, string& genome) {
   ifstream f(fn);
-  string l, l2;
+  string l, l2, lr;
   int hits = 0;
   int with_hit = 0;
   int lines = 0;
@@ -139,7 +151,7 @@ void Go(char *fn, vector<unordered_map<unsigned int, vector<int>>>& index, strin
     getline(f, l2);
     getline(f, l);
     getline(f, l);
-    string lr = ReverseSeq(l2);
+    ReverseSeq(l2, lr);
     bool hit = false;
     GetMinHashForSeq(l2, hashes);
     for (int j = 0; j < nHashes; j++) {
@@ -193,11 +205,11 @@ void Go(char *fn, vector<unordered_map<unsigned int, vector<int>>>& index, strin
   cout << "with hit " << with_hit << endl;
 }
 
-void Go2(char *fn, vector<unordered_map<unsigned int, vector<pair<int, int>>>>& index,
+void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
          string& genome, char* output_file_name) {
   ifstream f(fn);
   ofstream of(output_file_name);
-  string l, l2, l3;
+  string l, l2, l3, lr;
   int hits = 0;
   int with_hit = 0;
   int lines = 0;
@@ -206,18 +218,18 @@ void Go2(char *fn, vector<unordered_map<unsigned int, vector<pair<int, int>>>>& 
   vector<bool> processed(genome.length());
   vector<pair<int, int>> events;
   int depth;
-  int req_depth = 3;
+  int req_depth = 6;
   while (getline(f, l)) {
     getline(f, l2);
     getline(f, l3);
     getline(f, l3);
-    string lr = ReverseSeq(l2);
+    ReverseSeq(l2, lr);
     bool hit = false;
     GetMinHashForSeq(l2, hashes);
     events.clear();
     int last_hit = -47;
     for (int j = 0; j < nHashes; j++) {
-      if (index[j].count(hashes[j]) == 0) continue;
+//      if (index[j].count(hashes[j]) == 0) continue;
       const vector<pair<int, int>>& hs = index[j][hashes[j]];
       for (int k = 0; k < hs.size(); k++) {
         events.push_back(make_pair(hs[k].first, 1));
@@ -242,7 +254,7 @@ void Go2(char *fn, vector<unordered_map<unsigned int, vector<pair<int, int>>>>& 
     events.clear();
     last_hit = -47;
     for (int j = 0; j < nHashes; j++) {
-      if (index[j].count(hashes[j]) == 0) continue;
+//      if (index[j].count(hashes[j]) == 0) continue;
       const vector<pair<int, int>>& hs = index[j][hashes[j]];
       for (int k = 0; k < hs.size(); k++) {
         events.push_back(make_pair(hs[k].first, 1));
@@ -273,6 +285,9 @@ void Go2(char *fn, vector<unordered_map<unsigned int, vector<pair<int, int>>>>& 
 
 
 int main(int argc, char** argv) {
+  for (int i = 0; i < nHashes; i++) {
+    hc[i] >>= 2;
+  }
   trans['A'] = 1;
   trans['T'] = 2;
   trans['C'] = 3;
@@ -284,7 +299,8 @@ int main(int argc, char** argv) {
   cout << "genome length " << genome.length() << endl;
   ShowElapsedTime(start_time);
 
-  vector<unordered_map<unsigned int, vector<pair<int, int>>>> index; 
+//  vector<unordered_map<unsigned int, vector<pair<int, int>>>> index; 
+  vector<vector<vector<pair<int,int>>>> index;
 //  vector<unordered_map<unsigned int, vector<int>>> index; 
   BuildIndex2(genome, 101, index);
   ShowElapsedTime(start_time);
