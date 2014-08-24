@@ -50,7 +50,11 @@ unsigned int hc[] = {
   0x888888,
   0x000000,
   0x472342,
-  0x2347aa
+  0x2347aa,
+  0x484848,
+  0x121212,
+  0x57892a,
+  0xcdef12
 };
 
 
@@ -232,7 +236,6 @@ void ProcessHashes(const vector<unsigned int>& hashes,
                    int& hits, bool& hit) {
   int depth = 0;
   events.clear();
-  int last_hit = -47;
   for (int j = 0; j < nHashes; j++) {
     const vector<pair<int, int>>& hs = index[j][hashes[j]];
     for (int k = 0; k < hs.size(); k++) {
@@ -241,16 +244,26 @@ void ProcessHashes(const vector<unsigned int>& hashes,
     }
   }
   sort(events.begin(), events.end());
-  depth = 0;
+  bool is_good = false;
+  int best_depth = req_depth;
+  int best_depth_pos = 0;
   for (int i = 0; i < events.size(); i++) {
     depth += events[i].second;
     if (depth >= req_depth) {
+      if (!is_good) {
+        is_good = true;
+        best_depth = depth;
+        best_depth_pos = events[i].first;
+      }
+      if (depth > best_depth) {
+        best_depth = depth;
+        best_depth_pos = events[i].first;
+      }
       hit = true;
       hits++;
-      if (events[i].first - last_hit > 101) {
-        last_hit = events[i].first;
-        of << l << " " << events[i].first << "\n";
-      }
+    } else if (is_good) {
+      of << l << " " << best_depth_pos << '\n';
+      is_good = false;
     }
   }
 }
@@ -267,7 +280,7 @@ void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
   vector<unsigned int> hashes;
   vector<pair<int, int>> events;
   int depth;
-  int req_depth = 6;
+  int req_depth = 8;
   while (getline(f, l)) {
     getline(f, l2);
     getline(f, l3);
@@ -289,7 +302,7 @@ void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
 
 
 int main(int argc, char** argv) {
-  ProfilerStart("blitz.prof");
+//  ProfilerStart("blitz.prof");
   for (int i = 0; i < nHashes; i++) {
     hc[i] >>= 2;
   }
@@ -313,5 +326,5 @@ int main(int argc, char** argv) {
   Go2(argv[2], index, genome, argv[3]);
   cout << "total ";
   ShowElapsedTime(start_time);
-  ProfilerStop();
+//  ProfilerStop();
 }
