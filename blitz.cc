@@ -34,28 +34,47 @@ inline void PushIfNotVisited(
   }
 }
 
+inline void PushFrontIfNotVisited(
+    int dist, int cur_genome_pos, int cur_read_pos,
+    int read_pos, int genome_pos, int iteration,
+    deque<pair<int, pair<int, int>>>&fr, vector<vector<int>>& visited) {
+  int gp = cur_genome_pos - genome_pos + read_pos + 20;
+  if (visited[cur_read_pos + 1][gp] != iteration) {
+    fr.push_front(make_pair(dist, make_pair(cur_genome_pos, cur_read_pos)));
+    visited[cur_read_pos + 1][gp] = iteration;
+  }
+}
+
 int ProcessHit(int genome_pos, int read_pos, const DNASeq& read, const DNASeq& genome) {
   static deque<pair<int, pair<int, int>>> fr;
   static int iteration = 0;
   iteration++;
   static vector<vector<int>> visited(read.size() + 47, vector<int>(read.size() + 47));
   assert(read.ExtractKmer(read_pos, kKmerSize) == genome.ExtractKmer(genome_pos, kKmerSize));
+  int error_limit = 6;
   // Forward
   int forward_errs = -1;
   fr.push_back(make_pair(0, make_pair(genome_pos + kKmerSize, read_pos + kKmerSize)));
   while (!fr.empty()) {
     pair<int, pair<int, int>> x = fr.front();
     fr.pop_front();
-    if (x.first > 6) continue;
+    if (x.first > error_limit) { 
+      fr.clear();
+      break;
+    }
     if (x.second.second == read.size()) {
       forward_errs = x.first;
       fr.clear();
       break;
     }
-    if (genome[x.second.first] == read[x.second.second]) {
+    if (x.second.second + 8 <= read.size() && x.second.first + 8 <= genome.size() &&
+        genome.ExtractKmer(x.second.first, 8) == read.ExtractKmer(x.second.second,8)){
+      PushFrontIfNotVisited(x.first, x.second.first + 8, x.second.second + 8,
+                            read_pos, genome_pos, iteration, fr, visited);
+    } else if (genome[x.second.first] == read[x.second.second]) {
       if (x.second.first + 1 < genome.size() || x.second.second + 1 == read.size()) {
-        PushIfNotVisited(x.first, x.second.first + 1, x.second.second + 1,
-                         read_pos, genome_pos, iteration, fr, visited);
+        PushFrontIfNotVisited(x.first, x.second.first + 1, x.second.second + 1,
+                              read_pos, genome_pos, iteration, fr, visited);
       }
     } else {
       if (x.second.first + 1 < genome.size()) {
@@ -75,16 +94,23 @@ int ProcessHit(int genome_pos, int read_pos, const DNASeq& read, const DNASeq& g
   while (!fr.empty()) {
     pair<int, pair<int, int>> x = fr.front();
     fr.pop_front();
-    if (x.first > 6) continue;
+    if (x.first > error_limit) {
+      fr.clear();
+      break;
+    }
     if (x.second.second == -1) {
       backward_errs = x.first;
       fr.clear();
       break;
     }
-    if (genome[x.second.first] == read[x.second.second]) {
+    if (x.second.second >= 7 && x.second.first >= 7 &&
+        genome.ExtractKmer(x.second.first - 7, 8) == read.ExtractKmer(x.second.second - 7,8)) {
+      PushFrontIfNotVisited(x.first, x.second.first - 8, x.second.second - 8,
+                            read_pos, genome_pos, iteration, fr, visited);
+    } else if (genome[x.second.first] == read[x.second.second]) {
       if (x.second.first - 1 >= 0 || x.second.second - 1 == -1) {
-        PushIfNotVisited(x.first, x.second.first - 1, x.second.second - 1,
-                         read_pos, genome_pos, iteration, fr, visited);
+        PushFrontIfNotVisited(x.first, x.second.first - 1, x.second.second - 1,
+                              read_pos, genome_pos, iteration, fr, visited);
       }
     } else {
       if (x.second.first - 1 >= 0) {
@@ -102,6 +128,7 @@ int ProcessHit(int genome_pos, int read_pos, const DNASeq& read, const DNASeq& g
 }
 
 int main(int argc, char**argv) {
+  DNASeq::InitTrans();
   vector<DNASeq> genomes;
   LoadFasta(argv[1], genomes);
   DNASeq genome = genomes[0];
@@ -119,13 +146,16 @@ int main(int argc, char**argv) {
   int hits = 0;
   int with_hit = 0;
   int reads = 0;
+  ofstream of(argv[3]);
   while (reads_reader.Next(read, read_rev)) {
     reads++;
     bool hit = false;
+    int dist;
     pair<unsigned int, int> mh = read.GetMinHashWithPos(kKmerSize, Hasher());
     if (mh.first < index.size()) {
       for (auto &genome_pos: index[mh.first]) {
-        if (ProcessHit(genome_pos, mh.second, read, genome)) {
+        if ((dist = ProcessHit(genome_pos, mh.second, read, genome)) != -1) {
+          of << reads << " " << dist << "\n";
           hits += 1;
           hit = true;
         }
@@ -134,7 +164,8 @@ int main(int argc, char**argv) {
     pair<unsigned int, int> mhr = read_rev.GetMinHashWithPos(kKmerSize, Hasher());
     if (mhr.first < index.size()) {
       for (auto &genome_pos: index[mhr.first]) {
-        if (ProcessHit(genome_pos, mhr.second, read_rev, genome)) {
+        if ((dist = ProcessHit(genome_pos, mhr.second, read_rev, genome)) != -1) {
+          of << reads << " " << dist << " R\n";
           hits += 1;
           hit = true;
         }

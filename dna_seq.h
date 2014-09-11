@@ -23,14 +23,16 @@ class Hasher {
 class DNASeq {
   vector<unsigned int> storage_;
   int size_;
+  static char trans[256];
  public:
-  DNASeq() {}
-  DNASeq(string x) {
-    char trans[256];
+  static void InitTrans() {
     trans['A'] = trans['a'] = 0;
     trans['C'] = trans['c'] = 1;
     trans['G'] = trans['g'] = 2;
-    trans['T'] = trans['T'] = 3;
+    trans['T'] = trans['t'] = 3;
+  }
+  DNASeq() {}
+  DNASeq(string x) {
     size_ = x.size();
     storage_.resize((size_ + 15) / 16 + 1);
     for (int i = 0; i < x.size(); i++) {
@@ -187,25 +189,21 @@ class DNASeq {
 void LoadFasta(char* filename, vector<DNASeq>& seqs);
 void LoadFastq(char* filename, vector<DNASeq>& seqs);
 
-inline char ReverseBase(char a) {
-  if (a == 'A') return 'T';
-  if (a == 'C') return 'G';
-  if (a == 'G') return 'C';
-  if (a == 'T') return 'A';
-}
-
-inline void ReverseSeq(const string& x, string& ret) {
-  ret.clear();
-  for (int i = x.length()-1; i >= 0; i--) {
-    ret += ReverseBase(x[i]);
-  }
-}
-
 class FastqLoader {
   ifstream f;
   string s, s2, sr;
+  char rev[256];
+  void ReverseSeq(const string& x, string& ret) {
+    ret.clear();
+    for (int i = x.length()-1; i >= 0; i--) {
+      ret += rev[x[i]];
+    }
+  }
  public:
-  FastqLoader(char* filename) : f(filename) {}
+  FastqLoader(char* filename) : f(filename) {
+    rev['A'] = 'T'; rev['T'] = 'A';
+    rev['C'] = 'G'; rev['G'] = 'C';
+  }
 
   bool Next(DNASeq& seq, DNASeq& seq_rev) {
     if (!getline(f, s2)) return false;

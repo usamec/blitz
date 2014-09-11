@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 project (Blitz)
 
-list( APPEND CMAKE_CXX_FLAGS "-std=c++0x -g -O2 ${CMAKE_CXX_FLAGS}")
+list( APPEND CMAKE_CXX_FLAGS "-std=c++0x -g -O2 -DNDEBUG ${CMAKE_CXX_FLAGS}")
 
 add_library(dna_seq dna_seq.cc)
 

@@ -4,6 +4,8 @@
 
 using namespace std;
 
+char DNASeq::trans[256];
+
 void LoadFasta(char* filename, vector<DNASeq>& seqs) {
   ifstream f(filename);
   string s;
