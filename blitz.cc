@@ -1,330 +1,146 @@
-#include <chrono>
+#include "dna_seq.h"
 #include <iostream>
-#include <string>
-#include <fstream>
-#include <vector>
-#include <algorithm>
-#include <unordered_map>
-#include <gperftools/profiler.h>
-#include <queue>
+#include <deque>
 
-using namespace std::chrono;
 using namespace std;
 
-const int kIndexKmer = 11;
-char trans[256];
+const int kKmerSize = 12;
 
-inline char ReverseBase(char a) {
-  if (a == 'A') return 'T';
-  if (a == 'C') return 'G';
-  if (a == 'G') return 'C';
-  if (a == 'T') return 'A';
-}
-
-inline void ReverseSeq(const string& x, string& ret) {
-  ret.clear();
-  for (int i = x.length()-1; i >= 0; i--) {
-    ret += ReverseBase(x[i]);
-  }
-}
-
-const int nHashes = 20;
-
-unsigned int hc[] = {
-  0x0faaff,
-  0xf0ffaa,
-  0x1e0000,
-  0xe14444,
-  0x2dbb66,
-  0xd2aaff,
-  0x3cffaa,
-  0xc388dd,
-  0x4b2222,
-  0xb4bbcc,
-  0x5a5a5a,
-  0xa5a5a5,
-  0x696969,
-  0x969696,
-  0x787878,
-  0x787878,
-  0x888888,
-  0x000000,
-  0x472342,
-  0x2347aa,
-  0x484848,
-  0x121212,
-  0x57892a,
-  0xcdef12
-};
-
-
-unsigned int HashKmer(unsigned int x, unsigned int cc) {
-  return cc ^ (x << 7) ^ (x << 4);
-}
-
-void GetMinHashForSeq(const string& seq, vector<unsigned int>& hashes) {
-  hashes.clear();
-  hashes.resize(nHashes);
-  unsigned int curhash = 0;
-  for (int i = 0; i < kIndexKmer; i++) {
-    curhash <<= 2;
-    curhash += trans[seq[i]];
-  }
-  for (int j = 0; j < nHashes; j++) {
-    unsigned int hash = (curhash) ^ hc[j];
-    hashes[j] = hash;
-  }
-  for (int i = kIndexKmer; i < seq.length(); i++) {
-    curhash <<= 2;
-    curhash &= (1 << (2*kIndexKmer)) - 1;
-    curhash += trans[seq[i]];
-    for (int j = 0; j < nHashes; j++) {
-      unsigned int hash = (curhash) ^ hc[j];
-      hashes[j] = (hash > hashes[j]) ? hash : hashes[j];
+void BuildIndex(const DNASeq& genome, vector<vector<int>>& index) {
+  vector<pair<unsigned int, int>> mhs;
+  genome.GetMinHashesWithPos(kKmerSize, 101, Hasher(), mhs);
+  for (auto &e: mhs) {
+    if (index.size() <= e.first) {
+      index.resize(e.first+47);
     }
-  }  
-}
-
-void BuildIndex(
-    const string& seq, int read_len,
-    vector<unordered_map<unsigned int, vector<int>>>& index) {
-  index.clear();
-  index.resize(nHashes);
-  vector<unsigned int> hashes;
-  for (int i = 0; i < seq.length() - read_len + 1; i++) {
-    string s = seq.substr(i, read_len);
-    GetMinHashForSeq(s, hashes);
-    for (int j = 0; j < nHashes; j++) {
-      index[j][hashes[j]].push_back(i);
-    }
-  }
-}
-void BuildIndex2(
-    const string& seq, int read_len,
-    vector<vector<vector<pair<int, int>>>>& index) {
-  index.clear();
-  index.resize(nHashes, vector<vector<pair<int,int>>>(1<<22));
-  vector<unsigned int> hashes;
-  vector<unsigned int> last_hashes(nHashes);
-  vector<int> int_start(nHashes);
-  string s;
-  for (int i = 0; i < seq.length() - read_len + 1; i++) {
-    s.assign(seq, i, read_len);
-    GetMinHashForSeq(s, hashes);
-    for (int j = 0; j < nHashes; j++) {
-      if (i == 0) {
-        last_hashes[j] = hashes[j];
-        int_start[j] = 0;
-      } else {
-        if (hashes[j] != last_hashes[j]) {
-          index[j][last_hashes[j]].push_back(make_pair(int_start[j], i));
-          last_hashes[j] = hashes[j];
-          int_start[j] = i;
-        }
+    assert(index.size() > e.first);
+    if (index[e.first].size() > 0) {
+      if (index[e.first].back() == e.second) {
+        continue;
       }
     }
-  }
-  for (int j = 0; j < nHashes; j++) {
-    index[j][hashes[j]].push_back(make_pair(int_start[j], seq.length() - read_len + 1));
+    index[e.first].push_back(e.second);
   }
 }
 
-void LoadGenome(char* filename, string& genome) {
-  ifstream f(filename);
-  string l;
-  while (getline(f, l)) {
-    if (l[0] == '>') continue;
-    genome += l;
+inline void PushIfNotVisited(
+    int dist, int cur_genome_pos, int cur_read_pos,
+    int read_pos, int genome_pos, int iteration,
+    deque<pair<int, pair<int, int>>>&fr, vector<vector<int>>& visited) {
+  int gp = cur_genome_pos - genome_pos + read_pos + 20;
+  if (visited[cur_read_pos + 1][gp] != iteration) {
+    fr.push_back(make_pair(dist, make_pair(cur_genome_pos, cur_read_pos)));
+    visited[cur_read_pos + 1][gp] = iteration;
   }
 }
 
-void ShowElapsedTime(chrono::time_point<std::chrono::system_clock>& start) {
-  chrono::time_point<std::chrono::system_clock> end = std::chrono::system_clock::now();
-  std::chrono::duration<double> elapsed_seconds = end-start;
-  cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
+int ProcessHit(int genome_pos, int read_pos, const DNASeq& read, const DNASeq& genome) {
+  static deque<pair<int, pair<int, int>>> fr;
+  static int iteration = 0;
+  iteration++;
+  static vector<vector<int>> visited(read.size() + 47, vector<int>(read.size() + 47));
+  assert(read.ExtractKmer(read_pos, kKmerSize) == genome.ExtractKmer(genome_pos, kKmerSize));
+  // Forward
+  int forward_errs = -1;
+  fr.push_back(make_pair(0, make_pair(genome_pos + kKmerSize, read_pos + kKmerSize)));
+  while (!fr.empty()) {
+    pair<int, pair<int, int>> x = fr.front();
+    fr.pop_front();
+    if (x.first > 6) continue;
+    if (x.second.second == read.size()) {
+      forward_errs = x.first;
+      fr.clear();
+      break;
+    }
+    if (genome[x.second.first] == read[x.second.second]) {
+      if (x.second.first + 1 < genome.size() || x.second.second + 1 == read.size()) {
+        PushIfNotVisited(x.first, x.second.first + 1, x.second.second + 1,
+                         read_pos, genome_pos, iteration, fr, visited);
+      }
+    } else {
+      if (x.second.first + 1 < genome.size()) {
+        PushIfNotVisited(x.first + 1, x.second.first + 1, x.second.second + 1,
+                         read_pos, genome_pos, iteration, fr, visited);
+        PushIfNotVisited(x.first + 1, x.second.first + 1, x.second.second,
+                         read_pos, genome_pos, iteration, fr, visited);
+      }
+      PushIfNotVisited(x.first + 1, x.second.first, x.second.second + 1,
+                       read_pos, genome_pos, iteration, fr, visited);
+    }
+  }
+  if (forward_errs == -1) return -1;
+  // Backward
+  int backward_errs = -1;
+  fr.push_back(make_pair(0, make_pair(genome_pos - 1, read_pos - 1)));
+  while (!fr.empty()) {
+    pair<int, pair<int, int>> x = fr.front();
+    fr.pop_front();
+    if (x.first > 6) continue;
+    if (x.second.second == -1) {
+      backward_errs = x.first;
+      fr.clear();
+      break;
+    }
+    if (genome[x.second.first] == read[x.second.second]) {
+      if (x.second.first - 1 >= 0 || x.second.second - 1 == -1) {
+        PushIfNotVisited(x.first, x.second.first - 1, x.second.second - 1,
+                         read_pos, genome_pos, iteration, fr, visited);
+      }
+    } else {
+      if (x.second.first - 1 >= 0) {
+        PushIfNotVisited(x.first + 1, x.second.first - 1, x.second.second - 1,
+                         read_pos, genome_pos, iteration, fr, visited);
+        PushIfNotVisited(x.first + 1, x.second.first - 1, x.second.second,
+                         read_pos, genome_pos, iteration, fr, visited);
+      }
+      PushIfNotVisited(x.first + 1, x.second.first, x.second.second - 1,
+                       read_pos, genome_pos, iteration, fr, visited);
+    }
+  }
+  if (backward_errs == -1) return -1;
+  return backward_errs + forward_errs;
 }
 
-void Go(char *fn, vector<unordered_map<unsigned int, vector<int>>>& index, string& genome) {
-  ifstream f(fn);
-  string l, l2, lr;
+int main(int argc, char**argv) {
+  vector<DNASeq> genomes;
+  LoadFasta(argv[1], genomes);
+  DNASeq genome = genomes[0];
+  cout << "genome loaded " << genome.size() << endl;
+  vector<vector<int>> index;
+  BuildIndex(genome, index);
+  cout << "index size " << index.size() << endl;
+  int ss = 0;
+  for (auto &e: index) ss += e.size();
+  cout << "index entries " << ss << endl;
+
+  FastqLoader reads_reader(argv[2]);
+  DNASeq read;
+  DNASeq read_rev;
   int hits = 0;
   int with_hit = 0;
-  int lines = 0;
-  vector<unsigned int> hashes;
-  vector<int> counts(genome.length());
-  vector<bool> processed(genome.length());
-  while (getline(f, l)) {
-    getline(f, l2);
-    getline(f, l);
-    getline(f, l);
-    ReverseSeq(l2, lr);
+  int reads = 0;
+  while (reads_reader.Next(read, read_rev)) {
+    reads++;
     bool hit = false;
-    GetMinHashForSeq(l2, hashes);
-    for (int j = 0; j < nHashes; j++) {
-      const vector<int>& hs = index[j][hashes[j]];
-      hits += hs.size();
-      for (int k = 0; k < hs.size(); k++) {
-        counts[hs[k]]++;
-        processed[hs[k]] = true;
-      }
-    }
-    for (int j = 0; j < nHashes; j++) {
-      const vector<int>& hs = index[j][hashes[j]];
-      for (int k = 0; k < hs.size(); k++) {
-        if (processed[hs[k]]) {
-          if (counts[hs[k]] > 1) {
-            hit = true;
-          }
-          processed[hs[k]] = false;
+    pair<unsigned int, int> mh = read.GetMinHashWithPos(kKmerSize, Hasher());
+    if (mh.first < index.size()) {
+      for (auto &genome_pos: index[mh.first]) {
+        if (ProcessHit(genome_pos, mh.second, read, genome)) {
+          hits += 1;
+          hit = true;
         }
-        counts[hs[k]]--;
       }
     }
-
-    GetMinHashForSeq(lr, hashes);
-    for (int j = 0; j < nHashes; j++) {
-      const vector<int>& hs = index[j][hashes[j]];
-      hits += hs.size();
-      for (int k = 0; k < hs.size(); k++) {
-        counts[hs[k]]++;
-        processed[hs[k]] = true;
-      }
-    }
-    for (int j = 0; j < nHashes; j++) {
-      const vector<int>& hs = index[j][hashes[j]];
-      for (int k = 0; k < hs.size(); k++) {
-        if (processed[hs[k]]) {
-          if (counts[hs[k]] > 1) {
-            hit = true;
-          }
-          processed[hs[k]] = false;
+    pair<unsigned int, int> mhr = read_rev.GetMinHashWithPos(kKmerSize, Hasher());
+    if (mhr.first < index.size()) {
+      for (auto &genome_pos: index[mhr.first]) {
+        if (ProcessHit(genome_pos, mhr.second, read_rev, genome)) {
+          hits += 1;
+          hit = true;
         }
-        counts[hs[k]]--;
       }
     }
-    if (hit) {
-      with_hit++;
-    }
-    lines++;
+    if (hit) with_hit++;
   }
-  cout << "hits " << hits << " lines " << lines << endl;
-  cout << "with hit " << with_hit << endl;
-}
-
-struct Event {
-  int pos, who, index;
-  bool begin;
-  Event() {}
-  Event(int p, int w, int i, bool b) : pos(p), who(w), index(i), begin(b) {}
-};
-
-bool operator<(const Event& a, const Event& b) {
-  if (a.pos < b.pos) return false;
-  if (a.pos > b.pos) return true;
-  if (a.begin < b.begin) return false;
-  if (a.begin > b.begin) return true;
-  if (a.who < b.who) return false;
-  if (a.who > b.who) return true;
-}
-
-void ProcessHashes(const vector<unsigned int>& hashes,
-                   vector<vector<vector<pair<int, int>>>>& index,
-                   vector<pair<int, int>>& events,
-                   string& l,
-                   int req_depth,
-                   ofstream& of, 
-                   int& hits, bool& hit) {
-  int depth = 0;
-  events.clear();
-  for (int j = 0; j < nHashes; j++) {
-    const vector<pair<int, int>>& hs = index[j][hashes[j]];
-    for (int k = 0; k < hs.size(); k++) {
-      events.push_back(make_pair(hs[k].first, 1));
-      events.push_back(make_pair(hs[k].second, -1));
-    }
-  }
-  sort(events.begin(), events.end());
-  bool is_good = false;
-  int best_depth = req_depth;
-  int best_depth_pos = 0;
-  for (int i = 0; i < events.size(); i++) {
-    depth += events[i].second;
-    if (depth >= req_depth) {
-      if (!is_good) {
-        is_good = true;
-        best_depth = depth;
-        best_depth_pos = events[i].first;
-      }
-      if (depth > best_depth) {
-        best_depth = depth;
-        best_depth_pos = events[i].first;
-      }
-      hit = true;
-      hits++;
-    } else if (is_good) {
-      of << l << " " << best_depth_pos << '\n';
-      is_good = false;
-    }
-  }
-}
-
-
-void Go2(char *fn, vector<vector<vector<pair<int, int>>>>& index,
-         string& genome, char* output_file_name) {
-  ifstream f(fn);
-  ofstream of(output_file_name);
-  string l, l2, l3, lr;
-  int hits = 0;
-  int with_hit = 0;
-  int lines = 0;
-  vector<unsigned int> hashes;
-  vector<pair<int, int>> events;
-  int depth;
-  int req_depth = 8;
-  while (getline(f, l)) {
-    getline(f, l2);
-    getline(f, l3);
-    getline(f, l3);
-    ReverseSeq(l2, lr);
-    bool hit = false;
-    GetMinHashForSeq(l2, hashes);
-    ProcessHashes(hashes, index, events, l, req_depth, of, hits, hit);
-    GetMinHashForSeq(lr, hashes);
-    ProcessHashes(hashes, index, events, l, req_depth, of, hits, hit);
-    if (hit) {
-      with_hit++;
-    }
-    lines++;
-  }
-  cout << "hits " << hits << " lines " << lines << endl;
-  cout << "with hit " << with_hit << endl;
-}
-
-
-int main(int argc, char** argv) {
-//  ProfilerStart("blitz.prof");
-  for (int i = 0; i < nHashes; i++) {
-    hc[i] >>= 2;
-  }
-  trans['A'] = 1;
-  trans['T'] = 2;
-  trans['C'] = 3;
-  trans['G'] = 0;
-  chrono::time_point<std::chrono::system_clock> start_time = high_resolution_clock::now();
-
-  string genome;
-  LoadGenome(argv[1], genome);
-  cout << "genome length " << genome.length() << endl;
-  ShowElapsedTime(start_time);
-
-//  vector<unordered_map<unsigned int, vector<pair<int, int>>>> index; 
-  vector<vector<vector<pair<int,int>>>> index;
-//  vector<unordered_map<unsigned int, vector<int>>> index; 
-  BuildIndex2(genome, 101, index);
-  ShowElapsedTime(start_time);
-
-  Go2(argv[2], index, genome, argv[3]);
-  cout << "total ";
-  ShowElapsedTime(start_time);
-//  ProfilerStop();
+  cout << hits << " " << with_hit << " " << reads << endl;
 }
