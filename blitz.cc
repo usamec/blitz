@@ -143,11 +143,12 @@ int main(int argc, char**argv) {
   FastqLoader reads_reader(argv[2]);
   DNASeq read;
   DNASeq read_rev;
+  string name;
   int hits = 0;
   int with_hit = 0;
   int reads = 0;
   ofstream of(argv[3]);
-  while (reads_reader.Next(read, read_rev)) {
+  while (reads_reader.Next(read, read_rev, name)) {
     reads++;
     bool hit = false;
     int dist;
@@ -155,7 +156,7 @@ int main(int argc, char**argv) {
     if (mh.first < index.size()) {
       for (auto &genome_pos: index[mh.first]) {
         if ((dist = ProcessHit(genome_pos, mh.second, read, genome)) != -1) {
-          of << reads << " " << dist << "\n";
+          of << name << " " << dist << "\n";
           hits += 1;
           hit = true;
         }
@@ -165,7 +166,7 @@ int main(int argc, char**argv) {
     if (mhr.first < index.size()) {
       for (auto &genome_pos: index[mhr.first]) {
         if ((dist = ProcessHit(genome_pos, mhr.second, read_rev, genome)) != -1) {
-          of << reads << " " << dist << " R\n";
+          of << name << " " << dist << " R\n";
           hits += 1;
           hit = true;
         }

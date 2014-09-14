@@ -16,7 +16,13 @@ class Hasher {
   }
   Hasher(unsigned int h) : h(h) {}
   unsigned int operator()(unsigned int x) {
-    return x ^ h;
+    unsigned int hh = x ^ h;
+    hh ^= hh >> 16;
+    hh *= 0x85ebca6b;
+    hh ^= hh >> 13;
+    hh *= 0xc2b2ae35;
+    hh ^= hh >> 16;
+    return hh;
   }
 };
 
@@ -73,6 +79,23 @@ class DNASeq {
     unsigned int minhash = hasher(ExtractKmer(0, kmer_size));
     for (int i = 1; i < size_ - kmer_size + 1; i++) {
       minhash = min(minhash, hasher(ExtractKmer(i, kmer_size)));
+    }
+    return minhash;
+  }
+  
+  unsigned int KillMiddle(unsigned int x) const {
+    unsigned int masklow = 0xffff;
+    unsigned int maskhigh = 0xffffffff << 18;
+    return (x & masklow) | ((x & maskhigh) >> 2);
+  }
+
+  unsigned int GetMinHash2(int kmer_size, Hasher hasher) const {
+    unsigned int minhash = hasher(ExtractKmer(0, kmer_size));
+    for (int i = 1; i < size_ - kmer_size + 1; i++) {
+      minhash = min(minhash, hasher(ExtractKmer(i, kmer_size)));
+    }
+    for (int i = 1; i < size_ - kmer_size; i++) {
+      minhash = min(minhash, hasher(KillMiddle(ExtractKmer(i, kmer_size+1))));
     }
     return minhash;
   }
@@ -205,8 +228,8 @@ class FastqLoader {
     rev['C'] = 'G'; rev['G'] = 'C';
   }
 
-  bool Next(DNASeq& seq, DNASeq& seq_rev) {
-    if (!getline(f, s2)) return false;
+  bool Next(DNASeq& seq, DNASeq& seq_rev, string& name) {
+    if (!getline(f, name)) return false;
     getline(f, s);
     getline(f, s2);
     getline(f, s2);
