@@ -71,17 +71,17 @@ bool Check(const vector<unsigned int>& ka, const vector<unsigned int>& kb, int i
   int inter_size = distance(inter.begin(), it);
   double jaccard = 1.* inter_size / (ka.size() + kb.size() - inter_size);
 
-  return jaccard >= 0.002;
+  return jaccard >= 0.0025;
 }
-
-
 
 void ProcessGraph(vector<vector<int>>& read_clusters, 
                   map<pair<int, int>, int>& edges,
-                  unordered_map<int, int>& cluster_sizes) {
-  GraphManipulator gm(read_clusters, edges, cluster_sizes);
+                  unordered_map<int, int>& cluster_sizes, 
+                  vector<vector<unsigned int>>& cluster_kmers) {
+  GraphManipulator gm(read_clusters, edges, cluster_sizes, cluster_kmers);
+  gm.OutputGraph("wtf.dot");
   gm.Process();
-  gm.OutputGraph();
+  gm.OutputGraph("wtf2.dot", false);
 }
 
 void Test(int in, int out, string s) {
@@ -137,7 +137,7 @@ void Test(int in, int out, string s) {
           continue;
         }
         int el_cand = order[cands[k]];
-        if (origin[el] == origin[el_cand]) {
+        if (origin[el] == origin[el_cand] && abs(origin_order[el] - origin_order[el_cand]) < 7) { 
           min_ord = min(min_ord, cands[k]);
           break;
         } else if (cands[k] < min_ord) {
@@ -145,6 +145,8 @@ void Test(int in, int out, string s) {
             min_ord = cands[k];
             break;
           }
+        } else {
+          break;
         }
       }
     }
@@ -193,7 +195,7 @@ void Test(int in, int out, string s) {
     }
   }
 
-  ProcessGraph(read_clusters, edges, cluster_sizes);
+  ProcessGraph(read_clusters, edges, cluster_sizes, cluster_kmers);
 }
 
 int main(int argc, char** argv) {
