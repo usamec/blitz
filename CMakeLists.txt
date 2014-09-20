@@ -11,14 +11,5 @@ target_link_libraries(test_dna_seq dna_seq)
 add_executable(blitz blitz.cc)
 target_link_libraries(blitz dna_seq)
 
-add_executable(bpb debruijn-pacbio.cc)
-target_link_libraries(bpb dna_seq)
-
-add_executable(tc test-clustering4.cc)
-target_link_libraries(tc dna_seq)
-
 add_executable(tc3 test-clustering3.cc)
 target_link_libraries(tc3 dna_seq)
-
-add_executable(ti test-illum.cc)
-target_link_libraries(ti dna_seq)
