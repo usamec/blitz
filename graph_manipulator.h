@@ -102,13 +102,13 @@ class GraphManipulator {
   }
 
   void RemoveFromReads(int cluster_id) {
-    for (auto &r: read_clusters) {
+/*    for (auto &r: read_clusters) {
       vector<int> ok;
       for (int i = 0; i < r.size(); i++) {
         if (r[i] != cluster_id) ok.push_back(r[i]);
       }
       r = ok;
-    }
+    }*/
   
     for (auto &r: read_clusters_compact) {
       vector<int> ok;
@@ -123,6 +123,24 @@ class GraphManipulator {
         if (r[i] != cluster_id) ok.push_back(r[i]);
       }
       r = ok;
+    }
+  }
+
+  void ReplaceInReads(int from, int to) {
+    for (auto &r: read_clusters) {
+      for (int i = 0; i < r.size(); i++) {
+        if (r[i] == from) r[i] = to;
+      }
+    }
+    for (auto &r: read_clusters_compact) {
+      for (int i = 0; i < r.size(); i++) {
+        if (r[i] == from) r[i] = to;
+      }
+    }
+    for (auto &r: in_node_seq) {
+      for (int i = 0; i < r.size(); i++) {
+        if (r[i] == from) r[i] = to;
+      }
     }
   }
 
@@ -204,12 +222,21 @@ class GraphManipulator {
       for (auto &c: cands) {
         vector<int> closure;
         if (!IsClosed(i, c, closure)) continue;
-        if (closure.size() < 2) continue;
+        if (closure.size() < 1) continue;
+        if (closure.size() > 4) continue;
+        printf("bubble %d %d read cov %d\n",
+               in_node_seq[i].back(), in_node_seq[c][0],
+               GetReadCov(in_node_seq[i].back(),
+                          in_node_seq[c][0]));
+        if (GetReadCov(in_node_seq[i].back(), in_node_seq[c][0]) < 5)
+          continue;
         changed = true;
         g[i].insert(c);
         gr[c].insert(i);
         for (auto &e: closure) {
           g[i].erase(e);
+          gr[i].erase(e);
+          g[c].erase(e);
           gr[c].erase(e);
           g[e].clear();
           gr[e].clear();
@@ -254,7 +281,7 @@ class GraphManipulator {
     return s;
   }
   
-  void GetReadsWithCluster(int cluster, vector<pair<int, int>>& reads) {
+/*  void GetReadsWithCluster(int cluster, vector<pair<int, int>>& reads) {
     for (int i = 0; i < read_clusters.size(); i++) {
       for (int j = 0; j < read_clusters[i].size(); j++) {
         if (read_clusters[i][j] == cluster) {
@@ -263,10 +290,10 @@ class GraphManipulator {
         }
       }
     }
-  }
+  }*/
 
 
-  bool ThreadReads() {
+/*  bool ThreadReads() {
     bool changed = false;
 
     for (int i = 0; i < g.size(); i++) {
@@ -349,7 +376,7 @@ class GraphManipulator {
     }
 
     return changed;
-  }
+  }*/
 
   int GetClusterAfterSeq(vector<int>& read_cluster, int start, vector<int>& node_seq) {
     bool match = 0;
@@ -494,8 +521,31 @@ class GraphManipulator {
     int inter_size = distance(inter.begin(), it);
     double jaccard = 1.* inter_size / (ka.size() + kb.size() - inter_size);
 
-    printf("%lf\n", jaccard);
-    return jaccard >= 0.001;
+//    printf("%d %d %d %lf\n", ka.size(), kb.size(), inter_size, jaccard);
+    return jaccard >= 0.33;
+  }
+
+  void Merge(int e, int e2) {
+    printf("Merge %d %d %d %d\n", in_node_seq[e][0], in_node_seq[e2][0], e, e2);
+    ReplaceInReads(in_node_seq[e2][0], in_node_seq[e][0]);
+    for (auto &prev: gr[e2]) {
+      printf("erase %d\n", in_node_seq[prev][0]);
+      g[prev].erase(e2);
+      if (e == prev) continue;
+      g[prev].insert(e);
+      gr[e].insert(prev);
+    }
+    for (auto &next: g[e2]) {
+      printf("erase %d\n", in_node_seq[next][0]);
+      gr[next].erase(e2);
+      if (e == next) continue;
+      gr[next].insert(e);
+      g[e].insert(next);
+    }
+    printf("e2 %d\n", e2);
+    g[e2].clear();
+    gr[e2].clear();
+    in_node_seq[e2].clear();
   }
 
   bool MergeNeighbors() {
@@ -503,18 +553,37 @@ class GraphManipulator {
 
     printf("testing merge\n");
     for (int i = 0; i < g.size(); i++) {
-      for (auto &e: g[i]) {
-        for (auto &e2: g[i]) {
+      for (auto e: g[i]) {
+        for (auto e2: g[i]) {
           if (e == e2) continue;
           if (e > e2) continue;
           if (in_node_seq[e].size() > 1 || in_node_seq[e2].size() > 1) continue;
-          printf("test %d %d ", in_node_seq[e][0], in_node_seq[e2][0]); 
           if (CanMerge(cluster_kmers[in_node_seq[e][0]], cluster_kmers[in_node_seq[e2][0]])) {
-            printf("Merge %d %d\n", in_node_seq[e][0], in_node_seq[e2][0]);
+            Merge(e, e2);
+            return true;
+          }
+        }
+      }
+      for (auto e: gr[i]) {
+        for (auto e2: gr[i]) {
+          if (e == e2) continue;
+          if (e > e2) continue;
+          if (in_node_seq[e].size() > 1 || in_node_seq[e2].size() > 1) continue;
+          if (CanMerge(cluster_kmers[in_node_seq[e][0]], cluster_kmers[in_node_seq[e2][0]])) {
+            Merge(e, e2);
+            return true;
           }
         }
       }
     }
+
+/*    vector<int> active;
+    for (auto &x: in_node_seq) active.insert(active.end(), x.begin(), x.end());
+    for (int i = 0; i < 100; i++) {
+      CanMerge(cluster_kmers[active[rand()%active.size()]], 
+               cluster_kmers[active[rand()%active.size()]]);
+    }
+    exit(0);*/
 
     return changed;
   }
@@ -573,8 +642,21 @@ class GraphManipulator {
     bool changed = true;
     int id = 1;
     char buf[20];
+
+    while (MergeNeighbors()) {
+      printf("gm size %d\n", GetSize());
+    }
+
     while (changed) {
       changed = false;
+      changed |= Concat();
+      sprintf(buf, "wtf%dc.dot", id);
+      OutputGraph(buf);
+
+/*    changed |= MergeNeighbors();
+      printf("id %d\n", id);
+      sprintf(buf, "wtf%dmn.dot", id);
+      OutputGraph(buf);*/
 
       changed |= RemoveTips();
       sprintf(buf, "wtf%dt.dot", id);
@@ -582,11 +664,8 @@ class GraphManipulator {
       changed |= RemoveBubbles();
       sprintf(buf, "wtf%db.dot", id);
       OutputGraph(buf);
-      changed |= Concat();
-      sprintf(buf, "wtf%dc.dot", id);
-      OutputGraph(buf);
 //      changed |= ThreadReads();
-      changed |= ThreadReads2();
+//      changed |= ThreadReads2();
       sprintf(buf, "wtf%dth.dot", id);
       OutputGraph(buf);
       if (!changed) {
@@ -608,6 +687,30 @@ class GraphManipulator {
     int cluster_from = in_node_seq[from].back();
     int cluster_to = in_node_seq[to][0];
     return edge_cov[make_pair(cluster_from, cluster_to)];
+  }
+
+  int GetReadCov(int to, int from) {
+    int c = 0;
+    for (auto &e: read_clusters_compact) {
+      int start = -1;
+      for (int i = 0; i < e.size(); i++) {
+        if (e[i] == from) {
+          start = i;
+          break;
+        }
+      }
+      if (start == -1) continue;
+      int end = -1;
+      for (int i = start + 1; i < e.size(); i++) {
+        if (e[i] == to) {
+          end = i;
+          break;
+        }
+      }
+      if (end == -1) continue;
+      c++;
+    }
+    return c;
   }
 
   void RecalculateEdgeCov() {
@@ -640,7 +743,11 @@ class GraphManipulator {
     }
     for (int i = 0; i < g.size(); i++) {
       for (auto &e: g[i]) {
+        assert(gr[e].count(i));
         fprintf(f, "%d -> %d [label=\"%d\"]\n", i, e, GetEdgeCov(i, e));
+      }
+      for (auto &e: gr[i]) {
+        assert(g[e].count(i));
       }
     }
     fprintf(f, "}\n");
